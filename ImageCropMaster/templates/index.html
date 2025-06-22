@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <!-- Upload Section -->
+        <div class="card mb-4">
+            <div class="card-header d-flex align-items-center">
+                <i data-feather="upload" class="me-2"></i>
+                <h5 class="mb-0">Upload High-Quality Image</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-body text-center">
+                                <i data-feather="folder" size="48" class="text-muted mb-3"></i>
+                                <h6>Choose from Library</h6>
+                                <p class="text-muted small">Select an existing photo</p>
+                                <input type="file" id="file-input" class="form-control" accept="image/*">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-body text-center">
+                                <i data-feather="camera" size="48" class="text-primary mb-3"></i>
+                                <h6>Take New Photo</h6>
+                                <p class="text-muted small">Use device camera</p>
+                                <input type="file" id="camera-input" class="form-control" accept="image/*" capture="environment">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3 text-center">
+                    <small class="text-muted">
+                        Supported formats: TIFF 16-bit, PNG 16-bit, High-quality JPEG | Maximum file size: 500MB
+                    </small>
+                </div>
+                
+                <!-- Upload Progress -->
+                <div id="upload-progress" class="mt-3 d-none">
+                    <div class="progress">
+                        <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <small class="text-muted mt-1 d-block">Uploading...</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image Information Panel -->
+        <div id="image-info-panel" class="card mb-4 d-none">
+            <div class="card-header d-flex align-items-center">
+                <i data-feather="info" class="me-2"></i>
+                <h5 class="mb-0">Image Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div id="image-info" class="small"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <div id="quality-indicators"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image Preview and Cropping Controls -->
+        <div id="crop-panel" class="card mb-4 d-none">
+            <div class="card-header d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center">
+                    <i data-feather="crop" class="me-2"></i>
+                    <h5 class="mb-0">Preview & Crop Settings</h5>
+                </div>
+                <div class="text-muted small">
+                    Target: 2:3 Aspect Ratio
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Preview Image -->
+                <div class="text-center mb-4">
+                    <div id="image-preview-container" class="position-relative d-inline-block">
+                        <img id="image-preview" class="img-fluid border rounded" style="max-height: 400px;">
+                        <div id="crop-overlay" class="crop-overlay"></div>
+                    </div>
+                </div>
+
+                <!-- Crop Controls -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <label class="form-label">
+                            <i data-feather="rotate-cw" class="me-1"></i>
+                            Orientation
+                        </label>
+                        <div class="d-flex gap-2 mb-3">
+                            <input type="radio" class="btn-check" name="orientation" id="portrait" value="portrait" checked>
+                            <label class="btn btn-outline-secondary" for="portrait">
+                                <i data-feather="smartphone" class="me-1"></i>
+                                Portrait (2:3)
+                            </label>
+                            <input type="radio" class="btn-check" name="orientation" id="landscape" value="landscape">
+                            <label class="btn btn-outline-secondary" for="landscape">
+                                <i data-feather="monitor" class="me-1"></i>
+                                Landscape (3:2)
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="zoom-slider" class="form-label">
+                            <i data-feather="zoom-in" class="me-1"></i>
+                            Zoom Level: <span id="zoom-value">1.0</span>x
+                        </label>
+                        <input type="range" class="form-range" id="zoom-slider" 
+                               min="1" max="5" step="0.1" value="1">
+                        <div class="d-flex justify-content-between small text-muted">
+                            <span>Fit</span>
+                            <span>3x</span>
+                            <span>5x</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-8">
+                        <label for="focus-x-slider" class="form-label">
+                            <i data-feather="move" class="me-1"></i>
+                            Horizontal Position
+                        </label>
+                        <input type="range" class="form-range" id="focus-x-slider" 
+                               min="0" max="1" step="0.01" value="0.5">
+                        <div class="d-flex justify-content-between small text-muted">
+                            <span>Left</span>
+                            <span>Center</span>
+                            <span>Right</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mb-4">
+                    <div class="col-md-8">
+                        <label for="focus-y-slider" class="form-label">
+                            <i data-feather="target" class="me-1"></i>
+                            Vertical Position
+                        </label>
+                        <input type="range" class="form-range" id="focus-y-slider" 
+                               min="0" max="1" step="0.01" value="0.5">
+                        <div class="d-flex justify-content-between small text-muted">
+                            <span>Top</span>
+                            <span>Center</span>
+                            <span>Bottom</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <div class="d-flex gap-2">
+                            <button id="process-btn" class="btn btn-primary btn-lg">
+                                <i data-feather="scissors" class="me-2"></i>
+                                Crop Image
+                            </button>
+                            <button id="reset-btn" class="btn btn-outline-secondary">
+                                <i data-feather="refresh-cw" class="me-1"></i>
+                                Reset
+                            </button>
+                            <button id="reload-btn" class="btn btn-outline-warning">
+                                <i data-feather="rotate-ccw" class="me-1"></i>
+                                Reload Page
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Processing Status -->
+        <div id="processing-panel" class="card mb-4 d-none">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-3" role="status">
+                        <span class="visually-hidden">Processing...</span>
+                    </div>
+                    <div>
+                        <h6 class="mb-1">Processing Image...</h6>
+                        <small class="text-muted">Applying 2:3 crop with quality preservation</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Panel -->
+        <div id="results-panel" class="card mb-4 d-none">
+            <div class="card-header d-flex align-items-center">
+                <i data-feather="check-circle" class="me-2 text-success"></i>
+                <h5 class="mb-0 text-success">Processing Complete</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Processed Image Information</h6>
+                        <div id="processed-info" class="small"></div>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <div class="d-flex flex-column gap-2">
+                            <div class="d-flex gap-2 justify-content-end">
+                                <button id="save-to-photos-btn" class="btn btn-success btn-lg">
+                                    <i data-feather="folder-plus" class="me-2"></i>
+                                    Save to Files
+                                </button>
+                                <button id="new-image-btn" class="btn btn-outline-secondary btn-lg">
+                                    <i data-feather="refresh-cw" class="me-1"></i>
+                                    New Image
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error Alert -->
+        <div id="error-alert" class="alert alert-danger d-none" role="alert">
+            <div class="d-flex align-items-center">
+                <i data-feather="alert-circle" class="me-2"></i>
+                <div>
+                    <strong>Error:</strong>
+                    <span id="error-message"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
