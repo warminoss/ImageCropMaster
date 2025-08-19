@@ -57,12 +57,6 @@ document.querySelectorAll('input[name="orientation"]').forEach(r => {
 // Helpers
 const api = (p) => `${API_BASE}${p}`;
 
-/* =========================
-   PATCH #1 — Upload Notion
-   =========================
-   Minimal : on garde la version XHR d’origine, et on ajoute seulement
-   un fallback fetch quand on détecte l’embed Notion (iframe).
-*/
 function handleFileSelect(evt) {
   const file = evt.target.files?.[0];
   if (!file) return;
@@ -78,44 +72,7 @@ function handleFileSelect(evt) {
   uploadProgress.classList.remove('d-none');
   progressBar.style.width = '0%';
 
-  const inNotion = (window.top !== window.self) && /notion\.so|notion\.site/i.test(document.referrer || '');
-
-  if (inNotion) {
-    (async () => {
-      try {
-        const form = new FormData();
-        form.append('file', file);
-
-        const resp = await fetch(api('/upload'), {
-          method: 'POST',
-          body: form,
-          cache: 'no-store'
-        });
-
-        uploadProgress.classList.add('d-none');
-
-        if (!resp.ok) {
-          const txt = await resp.text().catch(()=> '');
-          showError(`Upload failed (${resp.status}) ${txt || ''}`.trim());
-          return;
-        }
-        const data = await resp.json();
-        if (data.error) { showError(data.error); return; }
-
-        currentFilename = data.filename;
-        currentPreviewFilename = data.preview_filename || data.filename;
-        displayImageInfo(data.image_info);
-        displayQualityIndicators(data.image_info);
-        loadImagePreview();
-      } catch (e) {
-        uploadProgress.classList.add('d-none');
-        showError('Upload failed: ' + (e?.message || e));
-      }
-    })();
-    return;
-  }
-
-  // XHR pour vrai suivi de progression (navigateur classique)
+  // XHR pour vrai suivi de progression (Fetch ne donne pas le progress upload)
   const form = new FormData();
   form.append('file', file);
 
@@ -205,7 +162,7 @@ function displayQualityIndicators(info) {
 }
 
 function loadImagePreview() {
-  imagePreview.src = api(`/preview/${encodeURIComponent(currentPreviewFilename)}`);
+  imagePreview.src = api(`/preview/${currentPreviewFilename}`);
   imagePreview.onload = () => {
     cropPanel.classList.remove('d-none');
     updateCropOverlay();
@@ -312,53 +269,29 @@ function displayProcessedInfo(data) {
   resultsPanel.classList.remove('d-none');
 }
 
-/* =========================
-   PATCH #2 — Download 404
-   =========================
-   Minimal : cache bust + retry 1 fois si 404, encodage du nom.
-*/
-async function downloadProcessedImage() {
+function downloadProcessedImage() {
   const fn = saveToPhotosBtn.dataset.filename;
   if (!fn) return;
 
-  const url = api(`/download/${encodeURIComponent(fn)}`) + `?t=${Date.now()}`;
-  try {
-    let resp = await fetch(url, { cache: 'no-store' });
-    if (!resp.ok && resp.status === 404) {
-      await new Promise(r => setTimeout(r, 350));
-      resp = await fetch(url, { cache: 'no-store' });
-    }
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const blob = await resp.blob();
-    const mime = blob.type || 'application/octet-stream';
+  const url = api(`/download/${fn}`);
 
-    if ('showSaveFilePicker' in window) {
-      try {
-        const ext = (fn.split('.').pop() || '').toLowerCase();
-        const handle = await window.showSaveFilePicker({
-          suggestedName: fn,
-          types: [{ description:'Image', accept: { [mime]: ext ? [`.${ext}`] : ['.jpg','.jpeg','.png','.tif','.webp'] } }]
-        });
-        const w = await handle.createWritable();
-        await w.write(blob);
-        await w.close();
-        return;
-      } catch {}
-    }
-
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = objectUrl;
-    a.download = fn;
-    a.rel = 'noopener';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
-  } catch (err) {
-    console.error(err);
-    showError('Download failed: ' + (err?.message || err));
+  // Web Share API si dispo
+  if (navigator.share && navigator.canShare) {
+    fetch(url, { cache:'no-store' })
+      .then(r => r.blob())
+      .then(blob => {
+        const file = new File([blob], fn, { type: blob.type || 'application/octet-stream' });
+        if (navigator.canShare({ files:[file] })) {
+          return navigator.share({ title: 'Cropped Image', files:[file] });
+        }
+        // fallback
+        window.location.href = url;
+      })
+      .catch(() => window.location.href = url);
+    return;
   }
+  // Fallback direct
+  window.location.href = url;
 }
 
 function resetControls() {
@@ -372,6 +305,13 @@ function resetControls() {
 }
 
 function resetApplication() {
+  if (currentFilename) {
+    fetch(api('/cleanup'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filenames: [currentFilename] })
+    }).catch(()=>{});
+  }
   currentFilename = null;
   currentPreviewFilename = null;
   fileInput.value = '';
@@ -392,8 +332,11 @@ function hideError() {
   errorAlert.classList.add('d-none');
 }
 
-/* =========================
-   PATCH #3 — IMPORTANT
-   =========================
-   Suppression du beforeunload/cleanup (cause de 404 dans Notion).
-*/
+// Nettoyage silencieux à la fermeture
+window.addEventListener('beforeunload', () => {
+  if (!currentFilename) return;
+  try {
+    const blob = new Blob([JSON.stringify({ filenames:[currentFilename] })], { type:'application/json' });
+    navigator.sendBeacon(api('/cleanup'), blob);
+  } catch {}
+});
