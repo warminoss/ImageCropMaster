@@ -7,10 +7,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# copie des requirements (⚠️ mets bien en minuscules dans ton repo : requirements.txt)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
 ENV PORT=8080
+ENV PYTHONUNBUFFERED=1   # logs envoyés immédiatement (utile sur Cloud Run)
+
 CMD ["gunicorn", "-b", "0.0.0.0:${PORT}", "-w", "2", "app:app"]
