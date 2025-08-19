@@ -269,29 +269,47 @@ function displayProcessedInfo(data) {
   resultsPanel.classList.remove('d-none');
 }
 
-function downloadProcessedImage() {
+// ⬇️ Correction pour Notion
+async function downloadProcessedImage() {
   const fn = saveToPhotosBtn.dataset.filename;
   if (!fn) return;
-
   const url = api(`/download/${fn}`);
 
-  // Web Share API si dispo
-  if (navigator.share && navigator.canShare) {
-    fetch(url, { cache:'no-store' })
-      .then(r => r.blob())
-      .then(blob => {
-        const file = new File([blob], fn, { type: blob.type || 'application/octet-stream' });
-        if (navigator.canShare({ files:[file] })) {
-          return navigator.share({ title: 'Cropped Image', files:[file] });
-        }
-        // fallback
-        window.location.href = url;
-      })
-      .catch(() => window.location.href = url);
-    return;
+  const inIframe = (window.location !== window.parent.location);
+
+  try {
+    // Cas Notion (iframe) → Blob + link
+    if (inIframe) {
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = fn;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+      return;
+    }
+
+    // Sinon → Web Share API si dispo
+    if (navigator.share && navigator.canShare) {
+      const resp = await fetch(url, { cache: 'no-store' });
+      const blob = await resp.blob();
+      const file = new File([blob], fn, { type: blob.type || 'application/octet-stream' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ title: 'Cropped Image', files: [file] });
+        return;
+      }
+    }
+
+    // Fallback direct
+    window.location.href = url;
+  } catch (err) {
+    console.error(err);
+    showError('Download failed: ' + err.message);
   }
-  // Fallback direct
-  window.location.href = url;
 }
 
 function resetControls() {
