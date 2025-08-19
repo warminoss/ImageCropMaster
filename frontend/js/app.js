@@ -269,46 +269,77 @@ function displayProcessedInfo(data) {
   resultsPanel.classList.remove('d-none');
 }
 
-// ⬇️ Correction pour Notion
+// ⬇️ Version robuste (Notion Desktop, iframes, navigateurs mobiles)
 async function downloadProcessedImage() {
   const fn = saveToPhotosBtn.dataset.filename;
   if (!fn) return;
+
   const url = api(`/download/${fn}`);
-
-  const inIframe = (window.location !== window.parent.location);
-
   try {
-    // Cas Notion (iframe) → Blob + link
-    if (inIframe) {
-      const response = await fetch(url, { cache: 'no-store' });
-      if (!response.ok) throw new Error('Download failed');
-      const blob = await response.blob();
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = fn;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(link.href);
-      return;
-    }
+    // 1) Récupération du fichier en Blob (no-store pour éviter le cache)
+    const resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const blob = await resp.blob();
+    const mime = blob.type || 'application/octet-stream';
 
-    // Sinon → Web Share API si dispo
-    if (navigator.share && navigator.canShare) {
-      const resp = await fetch(url, { cache: 'no-store' });
-      const blob = await resp.blob();
-      const file = new File([blob], fn, { type: blob.type || 'application/octet-stream' });
-      if (navigator.canShare({ files: [file] })) {
-        await navigator.share({ title: 'Cropped Image', files: [file] });
-        return;
+    // 2) Meilleur choix: File System Access API (Chromium desktop / webviews)
+    if ('showSaveFilePicker' in window) {
+      try {
+        const suggestedName = fn;
+        const ext = (fn.split('.').pop() || '').toLowerCase();
+        const handle = await window.showSaveFilePicker({
+          suggestedName,
+          types: [{
+            description: 'Image',
+            accept: { [mime]: ext ? [`.${ext}`] : ['.jpg', '.png', '.tif', '.webp'] }
+          }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return; // ✅ fait
+      } catch (e) {
+        // L’utilisateur peut annuler → on retombe sur les autres fallbacks
+        console.warn('showSaveFilePicker failed/denied, fallback to anchor:', e);
       }
     }
 
-    // Fallback direct
-    window.location.href = url;
+    // 3) Fallback anchor + download
+    try {
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = fn;
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+      return; // ✅ fait
+    } catch (e) {
+      console.warn('Anchor download failed, fallback to window.open:', e);
+    }
+
+    // 4) Fallback: ouvrir le blob dans une nouvelle fenêtre/onglet
+    try {
+      const objectUrl = URL.createObjectURL(blob);
+      const w = window.open(objectUrl, '_blank', 'noopener,noreferrer');
+      if (!w) {
+        // Si popups bloquées, dernier recours: navigation directe vers l’URL serveur
+        window.location.href = url;
+      } else {
+        // Libère l’URL après un petit délai
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      }
+      return; // ✅ fait
+    } catch (e) {
+      console.warn('window.open fallback failed, navigate to URL:', e);
+      window.location.href = url; // 5) tout dernier recours
+    }
   } catch (err) {
     console.error(err);
-    showError('Download failed: ' + err.message);
+    showError('Download failed: ' + (err?.message || err));
   }
 }
 
