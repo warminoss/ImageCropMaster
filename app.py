@@ -9,8 +9,8 @@ from routes import bp as routes_bp
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("image-api")
 
-# ── App ────────────────────────────────────────────────────────────────────────
-app = Flask(__name__)
+# ── App (force les dossiers templates/static) ──────────────────────────────────
+app = Flask(__name__, template_folder="templates", static_folder="static")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # ── Stockage éphémère Cloud Run (/tmp uniquement) ─────────────────────────────
@@ -26,7 +26,7 @@ app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", "50")) * 
 # TTL (durée de vie) des fichiers éphémères pour le petit garbage collector
 TMP_TTL_SECONDS = int(os.environ.get("TMP_TTL_SECONDS", "1800"))  # 30 min par défaut
 
-# ── Hooks globaux ─────────────────────────────────────────────────────────────
+# ── GC des fichiers temporaires ────────────────────────────────────────────────
 def _gc_tmp(root: str, ttl_seconds: int) -> None:
     """Supprime silencieusement les fichiers plus vieux que ttl_seconds."""
     now = time.time()
@@ -48,12 +48,12 @@ def _gc_hook():
     _gc_tmp(UPLOAD_DIR, TMP_TTL_SECONDS)
     _gc_tmp(PROCESSED_DIR, TMP_TTL_SECONDS)
 
+# ── Anti-cache pour les binaires (preview/download) ───────────────────────────
 @app.after_request
 def _no_store_for_binary(resp):
     """
-    Anti-cache pour les routes binaires.
-    On ne met 'no-store' que sur /preview/* et /download/*, pour éviter
-    d'impacter les assets du front.
+    On ne met 'no-store' que sur /preview/* et /download/*,
+    pour ne pas impacter les assets du front.
     """
     try:
         path = request.path or ""
@@ -68,6 +68,7 @@ def _no_store_for_binary(resp):
 # ── Routes (blueprint) ────────────────────────────────────────────────────────
 app.register_blueprint(routes_bp)
 
+# ── Healthcheck ───────────────────────────────────────────────────────────────
 @app.get("/api/health")
 def health():
     return {
