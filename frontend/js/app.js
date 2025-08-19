@@ -1,43 +1,46 @@
-/* ===== ImageCropMaster – Front (Netlify-friendly) =====
-   Auto-route:
-   - Si servi directement par Cloud Run  -> API_BASE = ''
-   - Si front sur Netlify avec proxy     -> API_BASE = '/api'
+<script>
+/* ===== ImageCropMaster – Front (Netlify + Notion safe) =====
+   Routage :
+   - Servi directement par Cloud Run  -> API_BASE = ''
+   - Servi via Netlify (proxy)        -> API_BASE = '/api' (ou window.__API_BASE__)
 */
-const API_BASE = location.hostname.endsWith('.run.app') ? '' : '/api';
+const API_BASE = location.hostname.endsWith('.run.app')
+  ? ''
+  : (window.__API_BASE__ || '/api');
 
-// State
+// Etat
 let currentFilename = null;
 let currentPreviewFilename = null;
 let imageAspectRatio = 1;
 let cropOrientation = 'portrait';
 
 // DOM
-const fileInput = document.getElementById('file-input');
-const cameraInput = document.getElementById('camera-input');
-const uploadProgress = document.getElementById('upload-progress');
-const progressBar = document.getElementById('progress-bar');
-const imageInfoPanel = document.getElementById('image-info-panel');
-const imageInfo = document.getElementById('image-info');
-const qualityIndicators = document.getElementById('quality-indicators');
-const cropPanel = document.getElementById('crop-panel');
-const imagePreview = document.getElementById('image-preview');
-const cropOverlay = document.getElementById('crop-overlay');
-const processingPanel = document.getElementById('processing-panel');
-const resultsPanel = document.getElementById('results-panel');
-const processedInfo = document.getElementById('processed-info');
-const errorAlert = document.getElementById('error-alert');
-const errorMessage = document.getElementById('error-message');
+const fileInput          = document.getElementById('file-input');
+const cameraInput        = document.getElementById('camera-input');
+const uploadProgress     = document.getElementById('upload-progress');
+const progressBar        = document.getElementById('progress-bar');
+const imageInfoPanel     = document.getElementById('image-info-panel');
+const imageInfo          = document.getElementById('image-info');
+const qualityIndicators  = document.getElementById('quality-indicators');
+const cropPanel          = document.getElementById('crop-panel');
+const imagePreview       = document.getElementById('image-preview');
+const cropOverlay        = document.getElementById('crop-overlay');
+const processingPanel    = document.getElementById('processing-panel');
+const resultsPanel       = document.getElementById('results-panel');
+const processedInfo      = document.getElementById('processed-info');
+const errorAlert         = document.getElementById('error-alert');
+const errorMessage       = document.getElementById('error-message');
 
-// Controls
-const zoomSlider = document.getElementById('zoom-slider');
-const zoomValue = document.getElementById('zoom-value');
+// Contrôles
+const zoomSlider   = document.getElementById('zoom-slider');
+const zoomValue    = document.getElementById('zoom-value');
 const focusXSlider = document.getElementById('focus-x-slider');
 const focusYSlider = document.getElementById('focus-y-slider');
-const processBtn = document.getElementById('process-btn');
-const resetBtn = document.getElementById('reset-btn');
-const reloadBtn = document.getElementById('reload-btn');
-const saveToPhotosBtn = document.getElementById('save-to-photos-btn');
-const newImageBtn = document.getElementById('new-image-btn');
+const processBtn   = document.getElementById('process-btn');
+const resetBtn     = document.getElementById('reset-btn');
+const reloadBtn    = document.getElementById('reload-btn');
+const saveToFilesBtn   = document.getElementById('save-to-photos-btn');
+const newImageBtn  = document.getElementById('new-image-btn');
 
 // Events
 fileInput.addEventListener('change', handleFileSelect);
@@ -48,13 +51,13 @@ focusYSlider.addEventListener('input', updateCropOverlay);
 processBtn.addEventListener('click', processImage);
 resetBtn.addEventListener('click', resetControls);
 reloadBtn.addEventListener('click', () => window.location.reload());
-saveToPhotosBtn.addEventListener('click', downloadProcessedImage);
+saveToFilesBtn.addEventListener('click', downloadProcessedImage);
 newImageBtn.addEventListener('click', resetApplication);
 document.querySelectorAll('input[name="orientation"]').forEach(r => {
   r.addEventListener('change', e => { cropOrientation = e.target.value; updateCropOverlay(); });
 });
 
-// Helpers
+// Helper
 const api = (p) => `${API_BASE}${p}`;
 
 function handleFileSelect(evt) {
@@ -62,17 +65,14 @@ function handleFileSelect(evt) {
   if (!file) return;
   hideError();
 
-  // 500MB hard limit (aligné backend)
-  if (file.size > 500 * 1024 * 1024) {
+  if (file.size > 500 * 1024 * 1024) { // 500MB
     showError('File size exceeds 500MB limit');
     return;
   }
 
-  // UI
   uploadProgress.classList.remove('d-none');
   progressBar.style.width = '0%';
 
-  // XHR pour vrai suivi de progression (Fetch ne donne pas le progress upload)
   const form = new FormData();
   form.append('file', file);
 
@@ -81,8 +81,7 @@ function handleFileSelect(evt) {
 
   xhr.upload.onprogress = (e) => {
     if (e.lengthComputable) {
-      const pct = Math.round((e.loaded / e.total) * 100);
-      progressBar.style.width = `${pct}%`;
+      progressBar.style.width = `${Math.round((e.loaded / e.total) * 100)}%`;
     }
   };
 
@@ -99,7 +98,8 @@ function handleFileSelect(evt) {
       displayImageInfo(data.image_info);
       displayQualityIndicators(data.image_info);
       loadImagePreview();
-    } catch (e) {
+      startKeepAlive(); // 🔁 empêche le TTL serveur d’expirer pendant l’édition
+    } catch {
       showError('Upload failed: invalid server response');
     }
   };
@@ -162,7 +162,7 @@ function displayQualityIndicators(info) {
 }
 
 function loadImagePreview() {
-  imagePreview.src = api(`/preview/${currentPreviewFilename}`);
+  imagePreview.src = api(`/preview/${encodeURIComponent(currentPreviewFilename)}`) + `?t=${Date.now()}`;
   imagePreview.onload = () => {
     cropPanel.classList.remove('d-none');
     updateCropOverlay();
@@ -265,82 +265,111 @@ function displayProcessedInfo(data) {
       <tr><td><strong>Color Profile:</strong></td><td>${colorProfileBadge}</td></tr>
       <tr><td><strong>File Size:</strong></td><td>${info.file_size_human}</td></tr>
     </table>`;
-  saveToPhotosBtn.dataset.filename = data.output_filename;
+  saveToFilesBtn.dataset.filename = data.output_filename;
   resultsPanel.classList.remove('d-none');
 }
 
-// ⬇️ Version robuste (Notion Desktop, iframes, navigateurs mobiles)
+// Téléchargement robuste (Notion webview/desktop)
 async function downloadProcessedImage() {
-  const fn = saveToPhotosBtn.dataset.filename;
+  const fn = saveToFilesBtn.dataset.filename;
   if (!fn) return;
+  const url = api(`/download/${encodeURIComponent(fn)}`) + `?t=${Date.now()}`;
 
-  const url = api(`/download/${fn}`);
   try {
-    // 1) Récupération du fichier en Blob (no-store pour éviter le cache)
-    const resp = await fetch(url, { cache: 'no-store' });
+    // Essai direct (évite certains 404 furtifs liés au cache/proxy)
+    let resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok && resp.status === 404) {
+      // courte attente si le fichier vient d’être finalisé sur Cloud Run
+      await new Promise(r => setTimeout(r, 400));
+      resp = await fetch(url, { cache: 'no-store' });
+    }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
     const blob = await resp.blob();
     const mime = blob.type || 'application/octet-stream';
 
-    // 2) Meilleur choix: File System Access API (Chromium desktop / webviews)
+    // 1) File System Access API (Chromium / webviews modernes)
     if ('showSaveFilePicker' in window) {
       try {
-        const suggestedName = fn;
-        const ext = (fn.split('.').pop() || '').toLowerCase();
+        const suggestedName = extractFilenameFromDisposition(resp.headers.get('Content-Disposition')) || fn;
+        const ext = (suggestedName.split('.').pop() || '').toLowerCase();
         const handle = await window.showSaveFilePicker({
           suggestedName,
-          types: [{
-            description: 'Image',
-            accept: { [mime]: ext ? [`.${ext}`] : ['.jpg', '.png', '.tif', '.webp'] }
-          }]
+          types: [{ description: 'Image', accept: { [mime]: ext ? [`.${ext}`] : ['.jpg','.jpeg','.png','.tif','.webp'] } }]
         });
         const writable = await handle.createWritable();
         await writable.write(blob);
         await writable.close();
-        return; // ✅ fait
+        pingRelease(fn); // indique au serveur qu’on a sauvegardé
+        return;
       } catch (e) {
-        // L’utilisateur peut annuler → on retombe sur les autres fallbacks
-        console.warn('showSaveFilePicker failed/denied, fallback to anchor:', e);
+        console.warn('showSaveFilePicker denied -> anchor fallback', e);
       }
     }
 
-    // 3) Fallback anchor + download
+    // 2) ancre + download
     try {
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = objectUrl;
       a.download = fn;
       a.rel = 'noopener';
-      a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(objectUrl);
-      return; // ✅ fait
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+      pingRelease(fn);
+      return;
     } catch (e) {
-      console.warn('Anchor download failed, fallback to window.open:', e);
+      console.warn('anchor fallback failed -> window.open', e);
     }
 
-    // 4) Fallback: ouvrir le blob dans une nouvelle fenêtre/onglet
+    // 3) ouvrir le blob (dernier recours sans popup)
     try {
       const objectUrl = URL.createObjectURL(blob);
       const w = window.open(objectUrl, '_blank', 'noopener,noreferrer');
-      if (!w) {
-        // Si popups bloquées, dernier recours: navigation directe vers l’URL serveur
-        window.location.href = url;
-      } else {
-        // Libère l’URL après un petit délai
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-      }
-      return; // ✅ fait
-    } catch (e) {
-      console.warn('window.open fallback failed, navigate to URL:', e);
-      window.location.href = url; // 5) tout dernier recours
+      if (!w) window.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      pingRelease(fn);
+      return;
+    } catch {
+      window.location.href = url;
+      pingRelease(fn);
     }
   } catch (err) {
     console.error(err);
     showError('Download failed: ' + (err?.message || err));
   }
+}
+
+function extractFilenameFromDisposition(cd) {
+  if (!cd) return null;
+  // content-disposition: attachment; filename="foo.jpg"
+  const m = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(cd);
+  if (!m) return null;
+  try { return decodeURIComponent(m[1].replace(/\"/g, '')); } catch { return m[1]; }
+}
+
+// Ping keep-alive (empêche la collecte TTL quand l’onglet Notion “fait semblant” d’être inactif)
+let keepAliveTimer = null;
+function startKeepAlive() {
+  stopKeepAlive();
+  keepAliveTimer = setInterval(() => {
+    if (!currentFilename) return;
+    navigator.sendBeacon(api('/keepalive'), new Blob([JSON.stringify({ filename: currentFilename })], { type:'application/json' }));
+  }, 20_000); // toutes les 20s
+}
+function stopKeepAlive() { if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; } }
+
+// Indique au serveur qu’on n’a plus besoin des fichiers (soft-delete différée)
+function pingRelease(fn) {
+  try {
+    fetch(api('/release'), {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ filename: fn || currentFilename })
+    }).catch(()=>{});
+  } catch {}
 }
 
 function resetControls() {
@@ -354,13 +383,7 @@ function resetControls() {
 }
 
 function resetApplication() {
-  if (currentFilename) {
-    fetch(api('/cleanup'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filenames: [currentFilename] })
-    }).catch(()=>{});
-  }
+  stopKeepAlive();
   currentFilename = null;
   currentPreviewFilename = null;
   fileInput.value = '';
@@ -376,16 +399,10 @@ function showError(msg) {
   errorMessage.textContent = msg;
   errorAlert.classList.remove('d-none');
 }
+function hideError() { errorAlert.classList.add('d-none'); }
 
-function hideError() {
-  errorAlert.classList.add('d-none');
-}
-
-// Nettoyage silencieux à la fermeture
-window.addEventListener('beforeunload', () => {
-  if (!currentFilename) return;
-  try {
-    const blob = new Blob([JSON.stringify({ filenames:[currentFilename] })], { type:'application/json' });
-    navigator.sendBeacon(api('/cleanup'), blob);
-  } catch {}
-});
+/* IMPORTANT :
+   ❌ SUPPRIMÉ: beforeunload/cleanup.
+   Notion recharge/sub-frame → provoquait destruction prématurée du fichier => 404.
+*/
+</script>
