@@ -1,9 +1,8 @@
 import os
 import uuid
 import logging
-from flask import render_template, request, jsonify, send_file
+from flask import Blueprint, render_template, request, jsonify, send_file, current_app
 from werkzeug.utils import secure_filename
-from app import app
 from utils.image_processor import ImageProcessor, get_image_info
 from PIL import Image
 from pillow_heif import register_heif_opener
@@ -11,12 +10,14 @@ from pillow_heif import register_heif_opener
 logger = logging.getLogger(__name__)
 register_heif_opener()  # Enable HEIC/HEIF support in Pillow
 
+# Blueprint au lieu d'importer l'app globale (évite les imports circulaires)
+bp = Blueprint("main", __name__)
+
 # Ajout du support WebP
 ALLOWED_EXTENSIONS = {'tiff', 'tif', 'png', 'jpg', 'jpeg', 'heic', 'heif', 'webp'}
 
 def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def is_valid_image_format(filepath):
     try:
@@ -26,11 +27,11 @@ def is_valid_image_format(filepath):
     except Exception:
         return False
 
-@app.route('/')
+@bp.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/upload', methods=['POST'])
+@bp.route('/upload', methods=['POST'])
 def upload_file():
     try:
         logger.info("Upload request received")
@@ -51,8 +52,8 @@ def upload_file():
             logger.error(f"Invalid file format: {file.filename}")
             return jsonify({'error': 'Invalid file format. Please upload TIFF, PNG, JPEG, HEIC, or WebP files.'}), 400
 
-        filename = str(uuid.uuid4()) + '_' + secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        filename = f"{uuid.uuid4()}_{secure_filename(file.filename)}"
+        filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         file_size = os.path.getsize(filepath)
         logger.info(f"File saved successfully, size: {file_size} bytes")
@@ -62,12 +63,12 @@ def upload_file():
         # Conversion HEIC/HEIF en JPEG pour l'aperçu uniquement
         preview_filename = filename
         preview_filepath = filepath
-        
+
         if ext in ["heic", "heif"]:
             logger.info("Detected HEIC/HEIF format, creating JPEG preview...")
             image = Image.open(filepath)
             preview_filename = filename.rsplit(".", 1)[0] + "_preview.jpg"
-            preview_filepath = os.path.join(app.config['UPLOAD_FOLDER'], preview_filename)
+            preview_filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], preview_filename)
             image.save(preview_filepath, format="JPEG", quality=95)
             logger.info(f"Preview created as {preview_filename}")
             # On garde le fichier HEIC original pour le traitement
