@@ -1,7 +1,7 @@
 import os
 import time
 import logging
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
 from routes import bp as routes_bp
 
@@ -9,7 +9,7 @@ from routes import bp as routes_bp
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("image-api")
 
-# ── App (force les dossiers templates/static) ──────────────────────────────────
+# ── App (force templates/static) ───────────────────────────────────────────────
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
@@ -49,15 +49,17 @@ def _gc_hook():
     _gc_tmp(PROCESSED_DIR, TMP_TTL_SECONDS)
 
 # ── Anti-cache pour les binaires (preview/download) ───────────────────────────
+API_PREFIX = "/api"
+
 @app.after_request
 def _no_store_for_binary(resp):
     """
-    On ne met 'no-store' que sur /preview/* et /download/*,
+    On ne met 'no-store' que sur /api/preview/* et /api/download/*,
     pour ne pas impacter les assets du front.
     """
     try:
         path = request.path or ""
-        if path.startswith("/preview/") or path.startswith("/download/"):
+        if path.startswith(f"{API_PREFIX}/preview/") or path.startswith(f"{API_PREFIX}/download/"):
             resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0, private"
             resp.headers["Pragma"] = "no-cache"
             resp.headers["Expires"] = "0"
@@ -65,11 +67,16 @@ def _no_store_for_binary(resp):
         pass
     return resp
 
-# ── Routes (blueprint) ────────────────────────────────────────────────────────
-app.register_blueprint(routes_bp)
+# ── Routes (blueprint) montées sous /api ──────────────────────────────────────
+app.register_blueprint(routes_bp, url_prefix=API_PREFIX)
+
+# ── Root ping simple (utile pour Cloud Run) ───────────────────────────────────
+@app.get("/")
+def root():
+    return jsonify(ok=True, message="ImageCropMaster API", health=f"{API_PREFIX}/health")
 
 # ── Healthcheck ───────────────────────────────────────────────────────────────
-@app.get("/api/health")
+@app.get(f"{API_PREFIX}/health")
 def health():
     return {
         "ok": True,
