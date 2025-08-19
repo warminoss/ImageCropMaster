@@ -1,0 +1,31 @@
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+*.log
+
+# === Virtual env ===
+venv/
+.env
+.venv/
+env/
+ENV/
+
+# === OS files ===
+.DS_Store
+Thumbs.db
+
+# === VSCode / IDE ===
+.vscode/
+.idea/
+
+# === Local data ===
+uploads/*
+processed/*
+
+# Garder les dossiers vides
+!uploads/.gitkeep
+!processed/.gitkeep
