@@ -27,10 +27,11 @@
     left: 0;
     right: 0;
     bottom: 0;
-    border: 4px solid #000;  /* noir bien épais */
-    border-radius: 0;        /* coins droits (optionnel) */
+    border: 4px solid #000 !important;  /* forcé noir */
+    border-radius: 0;
     pointer-events: none;
-    opacity: 1;              /* 100% opaque pour que le noir soit franc */
+    opacity: 1 !important;              /* forcé opaque */
+    z-index: 9999;                      /* toujours au-dessus */
 }
 
 .crop-overlay::before {
